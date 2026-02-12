@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "992919478764",
+    "project_id": "lifeflow-e02db",
+    "storage_bucket": "lifeflow-e02db.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:992919478764:android:79a20a41eadf77d8e020c9",
+        "android_client_info": {
+          "package_name": "com.example.lifeflow"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "992919478764-hb8tcm6tcvn1l8cdmi4doe1r1v2l5lqt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.lifeflow",
+            "certificate_hash": "4b28e61cfffe4cc875d3e3a1054a310dc62e0abf"
+          }
+        },
+        {
+          "client_id": "992919478764-g0r41npag5j2nses9dsb13fpo8412v0o.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEgaRudVIFaI7l6Fw34rR4IWqx08QLnAI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "992919478764-g0r41npag5j2nses9dsb13fpo8412v0o.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "992919478764-09g4913pq46bhtck8tmlifvt0dh5ohq9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.lifeflow"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
