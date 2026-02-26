@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access on all documents to authenticated users
+    // This is a basic rule - adjust based on your security requirements
+
+    // Users collection rules
+    match /users/{userId} {
+      // Allow users to read their own document
+      allow read: if request.auth.uid == userId;
+      // Allow users to write to their own document
+      allow write: if request.auth.uid == userId;
+      
+      // Allow all authenticated users to read public user data
+      // (for donor discovery)
+      allow read: if request.auth != null && 
+        request.resource.data.isAvailableToDonate == true;
+    }
+
+    // Donations collection rules
+    match /donations/{donationId} {
+      // Allow authenticated users to read donations
+      allow read: if request.auth != null;
+      
+      // Allow authenticated users to create donations
+      allow create: if request.auth != null &&
+        request.resource.data.donorId == request.auth.uid;
+      
+      // Allow donor to update their own donations
+      allow update: if request.auth != null &&
+        (resource.data.donorId == request.auth.uid ||
+         resource.data.recipientId == request.auth.uid);
+      
+      // Allow deletion by donor
+      allow delete: if request.auth != null &&
+        resource.data.donorId == request.auth.uid;
+    }
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

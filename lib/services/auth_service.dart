@@ -1,11 +1,19 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/user_model.dart';
+import 'database_service.dart';
 
 class AuthService {
+  static final AuthService _instance = AuthService._internal();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final DatabaseService _databaseService = DatabaseService();
+
+  factory AuthService() {
+    return _instance;
+  }
+
+  AuthService._internal();
 
   // Get current user
   User? get currentUser => _auth.currentUser;
@@ -29,7 +37,7 @@ class AuthService {
       // Update display name
       await userCredential.user?.updateDisplayName(name);
 
-      // Create user document in Firestore
+      // Create user document in Firestore using DatabaseService
       await _createUserDocument(userCredential.user!, name);
 
       return userCredential;
@@ -48,6 +56,14 @@ class AuthService {
         email: email,
         password: password,
       );
+      
+      // Update last login timestamp
+      if (userCredential.user != null) {
+        await _databaseService.updateUserProfile(
+          uid: userCredential.user!.uid,
+        );
+      }
+      
       return userCredential;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
@@ -83,6 +99,11 @@ class AuthService {
         await _createUserDocument(
           userCredential.user!,
           googleUser.displayName ?? 'User',
+        );
+      } else {
+        // Update last login for existing user
+        await _databaseService.updateUserProfile(
+          uid: userCredential.user!.uid,
         );
       }
 
@@ -123,20 +144,22 @@ class AuthService {
     }
   }
 
-  // Create user document in Firestore
+  // Create user document in Firestore using DatabaseService
   Future<void> _createUserDocument(User user, String name) async {
     try {
-      await _firestore.collection('users').doc(user.uid).set({
-        'uid': user.uid,
-        'name': name,
-        'email': user.email,
-        'photoUrl': user.photoURL,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastLogin': FieldValue.serverTimestamp(),
-        'bloodType': null, // To be filled later
-        'phoneNumber': user.phoneNumber,
-        'isAvailableToDonate': false,
-      });
+      final userModel = UserModel(
+        uid: user.uid,
+        name: name,
+        email: user.email ?? '',
+        photoUrl: user.photoURL,
+        phoneNumber: user.phoneNumber,
+        createdAt: DateTime.now(),
+        lastLogin: DateTime.now(),
+        bloodType: null,
+        isAvailableToDonate: false,
+      );
+
+      await _databaseService.createOrUpdateUser(userModel);
     } catch (e) {
       print('Error creating user document: $e');
     }
