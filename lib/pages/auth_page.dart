@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lifeflow/services/auth_service.dart';
+import 'phone_login_page.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -224,6 +225,11 @@ class _AuthPageState extends State<AuthPage> {
 
                           // Google Sign In Button
                           _buildGoogleButton(),
+
+                          const SizedBox(height: 12),
+
+                          // Phone Sign In Button
+                          _buildPhoneButton(),
                         ],
                       ),
                     ),
@@ -471,6 +477,43 @@ class _AuthPageState extends State<AuthPage> {
         ),
         label: const Text(
           'Continue with Google',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: Colors.black87,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.grey.shade300),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhoneButton() {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton.icon(
+        onPressed: _isLoading
+            ? null
+            : () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PhoneLoginPage(),
+                  ),
+                );
+              },
+        icon: Icon(
+          Icons.phone_outlined,
+          color: Colors.green.shade700,
+          size: 20,
+        ),
+        label: Text(
+          'Continue with Phone',
           style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w500,
