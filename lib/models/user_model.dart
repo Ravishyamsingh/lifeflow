@@ -14,6 +14,7 @@ class UserModel {
   final int totalDonations;
   final int livesSaved;
   final String? location;
+  final String? role; // 'donor' or 'patient'
 
   UserModel({
     required this.uid,
@@ -29,6 +30,7 @@ class UserModel {
     this.totalDonations = 0,
     this.livesSaved = 0,
     this.location,
+    this.role,
   });
 
   // Convert UserModel to JSON for Firestore
@@ -47,6 +49,7 @@ class UserModel {
       'totalDonations': totalDonations,
       'livesSaved': livesSaved,
       'location': location,
+      'role': role,
     };
   }
 
@@ -67,6 +70,7 @@ class UserModel {
       totalDonations: data['totalDonations'] ?? 0,
       livesSaved: data['livesSaved'] ?? 0,
       location: data['location'],
+      role: data['role'],
     );
   }
 
@@ -85,6 +89,7 @@ class UserModel {
     int? totalDonations,
     int? livesSaved,
     String? location,
+    String? role,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -100,6 +105,7 @@ class UserModel {
       totalDonations: totalDonations ?? this.totalDonations,
       livesSaved: livesSaved ?? this.livesSaved,
       location: location ?? this.location,
+      role: role ?? this.role,
     );
   }
 }

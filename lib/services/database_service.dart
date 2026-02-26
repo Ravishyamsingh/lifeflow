@@ -80,6 +80,27 @@ class DatabaseService {
     }
   }
 
+  /// Update user role ('donor' or 'patient')
+  Future<void> updateUserRole(String uid, String role) async {
+    try {
+      await _firestore.collection('users').doc(uid).update({'role': role});
+    } catch (e) {
+      print('Error updating user role: $e');
+      rethrow;
+    }
+  }
+
+  /// Get pending blood requests (for donors to browse)
+  Stream<List<DonationModel>> getPendingBloodRequests() {
+    return _firestore
+        .collection('donations')
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((d) => DonationModel.fromFirestore(d)).toList());
+  }
+
   /// Update donation availability status
   Future<void> setDonationAvailability(
     String uid,
