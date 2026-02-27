@@ -1,0 +1,49 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Blood Drop -->
+    <path
+        android:fillColor="#E53935"
+        android:pathData="M54,19
+            C54,24.2 70.5,40.2 69.6,53.5
+            C68.9,63.8 61.2,70.8 54,70.8
+            C46.8,70.8 39.1,63.8 38.4,53.5
+            C37.5,40.2 54,24.2 54,19 Z" />
+
+    <!-- Subtle highlight overlay (lighter red, partial) -->
+    <path
+        android:fillColor="#22FFFFFF"
+        android:pathData="M54,19
+            C54,24.2 70.5,40.2 69.6,53.5
+            C69.2,58 66.5,62 62.5,65
+            C58,50 52,35 54,19 Z" />
+
+    <!-- Heartbeat pulse line (white) -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M41,50 L47.5,50 L49.5,52.4 L52.8,41.5 L55.8,53.8 L57.5,50 L67,50" />
+
+    <!-- Flow ripple 1 -->
+    <path
+        android:strokeColor="#59E53935"
+        android:strokeWidth="1.2"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:pathData="M46.5,73.5 Q54,71 61.5,74.5" />
+
+    <!-- Flow ripple 2 -->
+    <path
+        android:strokeColor="#33E53935"
+        android:strokeWidth="1"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:pathData="M48.5,77 Q54,74.5 59.5,78" />
+
+</vector>

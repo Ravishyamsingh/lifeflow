@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/user_model.dart';
 import '../services/database_service.dart';
+import '../services/location_service.dart';
+import '../widgets/distance_badge.dart';
 
 class FindDonorsPage extends StatefulWidget {
   const FindDonorsPage({super.key});
@@ -12,8 +16,61 @@ class FindDonorsPage extends StatefulWidget {
 
 class _FindDonorsPageState extends State<FindDonorsPage> {
   final DatabaseService _databaseService = DatabaseService();
+  final LocationService _locationService = LocationService();
+  final TextEditingController _searchController = TextEditingController();
   String? _selectedBloodType;
   bool _showOnlyAvailable = true;
+  bool _sortByDistance = false;
+  Position? _myPosition;
+  String? _locationError;
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocation();
+  }
+
+  Future<void> _loadLocation() async {
+    final result = await _locationService.getPositionDetailed();
+    if (!mounted) return;
+    setState(() {
+      _myPosition = result.position;
+      _locationError = result.isSuccess ? null : result.userMessage;
+    });
+  }
+
+  double? _distanceKmTo(UserModel donor) {
+    if (_myPosition == null ||
+        donor.latitude == null ||
+        donor.longitude == null) {
+      return null;
+    }
+    return _locationService.calculateDistanceKm(
+      _myPosition!.latitude,
+      _myPosition!.longitude,
+      donor.latitude!,
+      donor.longitude!,
+    );
+  }
+
+  /// Filter donors by search query (name, location, blood type)
+  List<UserModel> _filterDonors(List<UserModel> donors) {
+    if (_searchQuery.isEmpty) return donors;
+    final q = _searchQuery.toLowerCase();
+    return donors.where((d) {
+      return d.name.toLowerCase().contains(q) ||
+          (d.location?.toLowerCase().contains(q) ?? false) ||
+          (d.bloodType?.toLowerCase().contains(q) ?? false) ||
+          (d.email.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   final List<String> bloodTypes = [
     'All',
@@ -53,6 +110,37 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
       ),
       body: Column(
         children: [
+          // Search bar
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by name, location…',
+                hintStyle: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value.trim()),
+            ),
+          ),
           // Filter chips
           Container(
             color: Colors.white,
@@ -82,6 +170,32 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
             ),
           ),
           const Divider(height: 1),
+
+          // Location error banner
+          if (_locationError != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.orange.shade50,
+              child: Row(
+                children: [
+                  Icon(Icons.location_off,
+                      size: 16, color: Colors.orange.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _locationError!,
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.orange.shade700),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loadLocation,
+                    child: const Text('Retry', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
 
           // Donors list
           Expanded(
@@ -113,9 +227,24 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
 
                 final donors = snapshot.data ?? [];
                 // Filter out current user
-                final filteredDonors = donors
+                var filteredDonors = donors
                     .where((donor) => donor.uid != currentUser?.uid)
                     .toList();
+
+                // Apply text search filter
+                filteredDonors = _filterDonors(filteredDonors);
+
+                // Sort by distance if enabled
+                if (_sortByDistance && _myPosition != null) {
+                  filteredDonors.sort((a, b) {
+                    final distA = _distanceKmTo(a);
+                    final distB = _distanceKmTo(b);
+                    if (distA == null && distB == null) return 0;
+                    if (distA == null) return 1;
+                    if (distB == null) return -1;
+                    return distA.compareTo(distB);
+                  });
+                }
 
                 if (filteredDonors.isEmpty) {
                   return Center(
@@ -126,7 +255,9 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                             size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
                         Text(
-                          'No donors found',
+                          _searchQuery.isNotEmpty
+                              ? 'No donors match "$_searchQuery"'
+                              : 'No donors found',
                           style: TextStyle(
                             fontSize: 18,
                             color: Colors.grey.shade600,
@@ -136,12 +267,24 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                         Text(
                           _selectedBloodType != null
                               ? 'No donors with blood type $_selectedBloodType available'
-                              : 'No donors are currently available',
+                              : _searchQuery.isNotEmpty
+                                  ? 'Try a different search term'
+                                  : 'No donors are currently available',
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.grey.shade500,
                           ),
                         ),
+                        if (_searchQuery.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            child: const Text('Clear search'),
+                          ),
+                        ],
                       ],
                     ),
                   );
@@ -218,21 +361,15 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      if (donor.location != null) ...[
-                        Icon(Icons.location_on,
-                            size: 14, color: Colors.grey.shade600),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            donor.location!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                      Expanded(
+                        child: DistanceBadge(
+                          myPosition: _myPosition,
+                          destLat: donor.latitude,
+                          destLng: donor.longitude,
+                          fallbackLocation: donor.location,
+                          size: 'normal',
                         ),
-                      ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -278,24 +415,44 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                 leading: Icon(Icons.phone, color: Colors.red.shade600),
                 title: const Text('Phone'),
                 subtitle: Text(donor.phoneNumber!),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Calling ${donor.phoneNumber}')),
-                  );
+                  final url = Uri.parse('tel:${donor.phoneNumber}');
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url);
+                  }
                 },
               ),
             ListTile(
               leading: Icon(Icons.email, color: Colors.red.shade600),
               title: const Text('Email'),
               subtitle: Text(donor.email),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Emailing ${donor.email}')),
-                );
+                final url = Uri.parse('mailto:${donor.email}');
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url);
+                }
               },
             ),
+            if (donor.latitude != null && donor.longitude != null)
+              ListTile(
+                leading:
+                    Icon(Icons.directions, color: Colors.blue.shade600),
+                title: const Text('Get Directions'),
+                subtitle: Text(donor.location ?? 'View on map'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final url = Uri.parse(
+                    'https://www.openstreetmap.org/directions?engine=osrm_car&route='
+                    ';${donor.latitude},${donor.longitude}',
+                  );
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url,
+                        mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
           ],
         ),
         actions: [
@@ -335,7 +492,24 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                 setState(() => _showOnlyAvailable = value);
                 Navigator.pop(context);
               },
-              activeColor: Colors.red.shade600,
+              activeTrackColor: Colors.red.shade600,
+            ),
+            SwitchListTile(
+              title: const Text('Sort by distance'),
+              subtitle: Text(
+                _myPosition != null
+                    ? 'Uses your current location'
+                    : 'Enable location to use this',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              value: _sortByDistance,
+              onChanged: _myPosition != null
+                  ? (value) {
+                      setState(() => _sortByDistance = value);
+                      Navigator.pop(context);
+                    }
+                  : null,
+              activeTrackColor: Colors.blue.shade600,
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -345,6 +519,7 @@ class _FindDonorsPageState extends State<FindDonorsPage> {
                   setState(() {
                     _selectedBloodType = null;
                     _showOnlyAvailable = true;
+                    _sortByDistance = false;
                   });
                   Navigator.pop(context);
                 },

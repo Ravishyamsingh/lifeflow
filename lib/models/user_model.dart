@@ -14,6 +14,8 @@ class UserModel {
   final int totalDonations;
   final int livesSaved;
   final String? location;
+  final double? latitude;
+  final double? longitude;
   final String? role; // 'donor' or 'patient'
 
   UserModel({
@@ -30,6 +32,8 @@ class UserModel {
     this.totalDonations = 0,
     this.livesSaved = 0,
     this.location,
+    this.latitude,
+    this.longitude,
     this.role,
   });
 
@@ -49,6 +53,8 @@ class UserModel {
       'totalDonations': totalDonations,
       'livesSaved': livesSaved,
       'location': location,
+      'latitude': latitude,
+      'longitude': longitude,
       'role': role,
     };
   }
@@ -70,6 +76,8 @@ class UserModel {
       totalDonations: data['totalDonations'] ?? 0,
       livesSaved: data['livesSaved'] ?? 0,
       location: data['location'],
+      latitude: (data['latitude'] as num?)?.toDouble(),
+      longitude: (data['longitude'] as num?)?.toDouble(),
       role: data['role'],
     );
   }
@@ -89,6 +97,8 @@ class UserModel {
     int? totalDonations,
     int? livesSaved,
     String? location,
+    double? latitude,
+    double? longitude,
     String? role,
   }) {
     return UserModel(
@@ -105,6 +115,8 @@ class UserModel {
       totalDonations: totalDonations ?? this.totalDonations,
       livesSaved: livesSaved ?? this.livesSaved,
       location: location ?? this.location,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
       role: role ?? this.role,
     );
   }

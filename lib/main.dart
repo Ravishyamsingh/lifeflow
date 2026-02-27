@@ -3,6 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
+import 'widgets/lifeflow_logo.dart';
+import 'config/app_config.dart';
 import 'pages/auth_page.dart';
 import 'pages/role_selection_page.dart';
 import 'pages/donor_home_page.dart';
@@ -10,6 +12,7 @@ import 'pages/patient_home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppConfig.load();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const LifeFlowApp());
 }
@@ -101,15 +104,7 @@ class _LoadingScreen extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: Colors.red.shade600,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.favorite, color: Colors.white, size: 32),
-            ),
+            const LifeFlowLogo(size: 64),
             const SizedBox(height: 20),
             CircularProgressIndicator(color: Colors.red.shade600),
           ],

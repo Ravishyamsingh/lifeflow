@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/user_model.dart';
 import '../models/donation_model.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/location_service.dart';
+import '../widgets/distance_badge.dart';
 import 'profile_page.dart';
 import 'settings_page.dart';
 import 'donation_history_page.dart';
 import 'blood_request_page.dart';
+import 'request_detail_page.dart';
 
 class DonorHomePage extends StatefulWidget {
   const DonorHomePage({super.key});
@@ -20,6 +25,16 @@ class _DonorHomePageState extends State<DonorHomePage> {
   final AuthService _authService = AuthService();
   final DatabaseService _db = DatabaseService();
   int _currentIndex = 0;
+  DateTime? _lastBackPress;
+
+  @override
+  void initState() {
+    super.initState();
+    // Proactively request location permission on first load.
+    // This ensures the permission dialog appears early, not when the user
+    // taps a specific feature.
+    LocationService().getPositionDetailed();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,34 +52,58 @@ class _DonorHomePageState extends State<DonorHomePage> {
           const ProfilePage(),
         ];
 
-        return Scaffold(
-          appBar: _buildAppBar(user),
-          body: pages[_currentIndex],
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.list_alt_outlined),
-                selectedIcon: Icon(Icons.list_alt),
-                label: 'Requests',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.history_outlined),
-                selectedIcon: Icon(Icons.history),
-                label: 'History',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (_currentIndex != 0) {
+              setState(() => _currentIndex = 0);
+              return;
+            }
+            final now = DateTime.now();
+            if (_lastBackPress == null ||
+                now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+              _lastBackPress = now;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Press back again to exit'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return;
+            }
+            SystemNavigator.pop();
+          },
+          child: Scaffold(
+            appBar: _buildAppBar(user),
+            body: pages[_currentIndex],
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) => setState(() => _currentIndex = i),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.list_alt_outlined),
+                  selectedIcon: Icon(Icons.list_alt),
+                  label: 'Requests',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.history_outlined),
+                  selectedIcon: Icon(Icons.history),
+                  label: 'History',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -270,6 +309,13 @@ class _DonorDashboard extends StatelessWidget {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
           _LiveRequestsList(db: db, currentUserId: user?.uid ?? ''),
+          const SizedBox(height: 24),
+
+          // My Accepted Requests
+          const Text('My Accepted Requests',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          _MyAcceptedPreview(db: db, uid: user?.uid ?? ''),
         ],
       ),
     );
@@ -336,15 +382,27 @@ class _AvailabilityToggleState extends State<_AvailabilityToggle> {
                   child: CircularProgressIndicator(strokeWidth: 2))
               : Switch(
                   value: available,
-                  activeColor: Colors.green,
+                  activeTrackColor: Colors.green,
                   onChanged: (val) async {
                     if (widget.user == null) return;
                     setState(() => _loading = true);
                     try {
                       await widget.db
                           .setDonationAvailability(widget.user!.uid, val);
+                      // Also update location when toggling available
+                      if (val) {
+                        final pos =
+                            await LocationService().getCurrentPosition();
+                        if (pos != null) {
+                          await widget.db.updateUserLocation(
+                            widget.user!.uid,
+                            latitude: pos.latitude,
+                            longitude: pos.longitude,
+                          );
+                        }
+                      }
                     } catch (_) {}
-                    setState(() => _loading = false);
+                    if (mounted) setState(() => _loading = false);
                   },
                 ),
         ],
@@ -355,22 +413,42 @@ class _AvailabilityToggleState extends State<_AvailabilityToggle> {
 
 // ─────────── Live Requests List ───────────
 
-class _LiveRequestsList extends StatelessWidget {
+class _LiveRequestsList extends StatefulWidget {
   final DatabaseService db;
   final String currentUserId;
 
   const _LiveRequestsList({required this.db, required this.currentUserId});
 
   @override
+  State<_LiveRequestsList> createState() => _LiveRequestsListState();
+}
+
+class _LiveRequestsListState extends State<_LiveRequestsList> {
+  Position? _myPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocation();
+  }
+
+  Future<void> _loadLocation() async {
+    final result = await LocationService().getPositionDetailed();
+    if (mounted) {
+      setState(() => _myPosition = result.position);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<DonationModel>>(
-      stream: db.getPendingBloodRequests(),
+      stream: widget.db.getPendingBloodRequests(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
         final requests = snapshot.data ?? [];
-        final others = requests.where((r) => r.donorId != currentUserId).toList();
+        final others = requests.where((r) => r.recipientId != widget.currentUserId).toList();
         if (others.isEmpty) {
           return Container(
             padding: const EdgeInsets.all(24),
@@ -384,11 +462,33 @@ class _LiveRequestsList extends StatelessWidget {
             ),
           );
         }
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: others.length,
-          itemBuilder: (_, i) => _RequestCard(request: others[i], db: db),
+        // Limit to latest 5 on dashboard; full list is in Requests tab
+        final display = others.length > 5 ? others.sublist(0, 5) : others;
+        return Column(
+          children: [
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: display.length,
+              itemBuilder: (_, i) => _RequestCard(
+                request: display[i],
+                db: widget.db,
+                myPosition: _myPosition,
+              ),
+            ),
+            if (others.length > 5)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '+ ${others.length - 5} more request(s) — see Requests tab',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -398,95 +498,152 @@ class _LiveRequestsList extends StatelessWidget {
 class _RequestCard extends StatelessWidget {
   final DonationModel request;
   final DatabaseService db;
+  final Position? myPosition;
 
-  const _RequestCard({required this.request, required this.db});
+  const _RequestCard({
+    required this.request,
+    required this.db,
+    this.myPosition,
+  });
+
+  Color _urgencyColor(String urgency) {
+    switch (urgency) {
+      case 'critical':
+        return Colors.red.shade700;
+      case 'urgent':
+        return Colors.orange.shade700;
+      default:
+        return Colors.green.shade700;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.shade100),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestDetailPage(request: request),
+        ),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.shade100),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-            child: Center(
-              child: Text(
-                request.donorBloodType,
-                style: TextStyle(
-                  color: Colors.red.shade700,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+        child: Row(
+          children: [
+            // Blood type badge + urgency dot
+            Column(
               children: [
-                Text(request.recipientName,
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 2),
-                Text(request.notes ?? 'No additional notes',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: Text(
+                      request.donorBloodType,
+                      style: TextStyle(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 4),
-                if (request.location != null)
-                  Row(children: [
-                    Icon(Icons.location_on, size: 12, color: Colors.grey.shade500),
-                    const SizedBox(width: 3),
-                    Text(request.location!,
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500)),
-                  ]),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: _urgencyColor(request.urgency),
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ],
             ),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-              await db.acceptDonation(request.donationId, uid);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Request accepted! The patient will be notified.'),
-                    backgroundColor: Colors.green,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(request.recipientName,
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _urgencyColor(request.urgency)
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          request.urgency.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: _urgencyColor(request.urgency),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade600,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
-              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${request.unitsNeeded} unit(s) · ${request.hospitalName ?? request.location ?? 'Unknown'}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: DistanceBadge(
+                          myPosition: myPosition,
+                          destLat: request.hospitalLat ?? request.patientLat,
+                          destLng: request.hospitalLng ?? request.patientLng,
+                          fallbackLocation: request.location,
+                        ),
+                      ),
+                      if (request.patientDisease != null) ...[const SizedBox(width: 8),
+                        Icon(Icons.medical_services,
+                            size: 12, color: Colors.grey.shade500),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(request.patientDisease!,
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey.shade500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-            child: const Text('Accept'),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+          ],
+        ),
       ),
     );
   }
@@ -507,17 +664,44 @@ class _DonorRequestsBrowser extends StatefulWidget {
 class _DonorRequestsBrowserState extends State<_DonorRequestsBrowser>
     with SingleTickerProviderStateMixin {
   late TabController _tab;
+  Position? _myPosition;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _tab = TabController(length: 2, vsync: this);
+    _loadPosition();
+  }
+
+  Future<void> _loadPosition() async {
+    final result = await LocationService().getPositionDetailed();
+    if (mounted) {
+      setState(() => _myPosition = result.position);
+    }
   }
 
   @override
   void dispose() {
     _tab.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  /// Filter donations by search query (name, blood type, hospital, urgency, location)
+  List<DonationModel> _filterRequests(List<DonationModel> list) {
+    if (_searchQuery.isEmpty) return list;
+    final q = _searchQuery.toLowerCase();
+    return list.where((r) {
+      return r.recipientName.toLowerCase().contains(q) ||
+          r.donorBloodType.toLowerCase().contains(q) ||
+          (r.hospitalName?.toLowerCase().contains(q) ?? false) ||
+          r.urgency.toLowerCase().contains(q) ||
+          (r.location?.toLowerCase().contains(q) ?? false) ||
+          (r.hospitalAddress?.toLowerCase().contains(q) ?? false) ||
+          (r.patientDisease?.toLowerCase().contains(q) ?? false);
+    }).toList();
   }
 
   @override
@@ -525,6 +709,35 @@ class _DonorRequestsBrowserState extends State<_DonorRequestsBrowser>
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     return Column(
       children: [
+        // Search bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search by name, blood type, hospital, urgency…',
+              hintStyle: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+              prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 20),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.grey.shade100,
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onChanged: (value) => setState(() => _searchQuery = value.trim()),
+          ),
+        ),
         TabBar(
           controller: _tab,
           labelColor: Colors.red.shade600,
@@ -546,21 +759,46 @@ class _DonorRequestsBrowserState extends State<_DonorRequestsBrowser>
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final list = snap.data ?? [];
+                  final all = snap.data ?? [];
+                  final list = _filterRequests(all);
+                  if (all.isNotEmpty && list.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text('No requests match "$_searchQuery"',
+                              style: TextStyle(color: Colors.grey.shade600)),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            child: const Text('Clear search'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
                   if (list.isEmpty) {
                     return const Center(child: Text('No pending requests'));
                   }
                   return ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: list.length,
-                    itemBuilder: (_, i) =>
-                        _RequestCard(request: list[i], db: widget.db),
+                    itemBuilder: (_, i) => _RequestCard(
+                      request: list[i],
+                      db: widget.db,
+                      myPosition: _myPosition,
+                    ),
                   );
                 },
               ),
               // My accepted donations
               StreamBuilder<List<DonationModel>>(
-                stream: widget.db.getUserDonations(uid),
+                stream: widget.db.getAcceptedDonationsForDonor(uid),
                 builder: (ctx, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
@@ -573,7 +811,10 @@ class _DonorRequestsBrowserState extends State<_DonorRequestsBrowser>
                   return ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: list.length,
-                    itemBuilder: (_, i) => _DonorDonationTile(donation: list[i]),
+                    itemBuilder: (_, i) => _DonorDonationTile(
+                      donation: list[i],
+                      myPosition: _myPosition,
+                    ),
                   );
                 },
               ),
@@ -587,8 +828,9 @@ class _DonorRequestsBrowserState extends State<_DonorRequestsBrowser>
 
 class _DonorDonationTile extends StatelessWidget {
   final DonationModel donation;
+  final Position? myPosition;
 
-  const _DonorDonationTile({required this.donation});
+  const _DonorDonationTile({required this.donation, this.myPosition});
 
   Color _statusColor(String status) {
     switch (status) {
@@ -605,53 +847,120 @@ class _DonorDonationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestDetailPage(request: donation),
+        ),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: _statusColor(donation.status),
-              shape: BoxShape.circle,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: _statusColor(donation.status),
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(donation.recipientName,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(
-                  donation.status.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: _statusColor(donation.status),
-                    fontWeight: FontWeight.bold,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(donation.recipientName,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        donation.status.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: _statusColor(donation.status),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: DistanceBadge(
+                          myPosition: myPosition,
+                          destLat: donation.hospitalLat ?? donation.patientLat,
+                          destLng: donation.hospitalLng ?? donation.patientLng,
+                          fallbackLocation: donation.location,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Text(
-            donation.donorBloodType,
-            style: TextStyle(
-              color: Colors.red.shade600,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
+            Text(
+              donation.donorBloodType,
+              style: TextStyle(
+                color: Colors.red.shade600,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+// ─────────── My Accepted Preview (Dashboard) ───────────
+
+class _MyAcceptedPreview extends StatelessWidget {
+  final DatabaseService db;
+  final String uid;
+
+  const _MyAcceptedPreview({required this.db, required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    if (uid.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return StreamBuilder<List<DonationModel>>(
+      stream: db.getAcceptedDonationsForDonor(uid),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final list = snapshot.data ?? [];
+        if (list.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Center(
+              child: Text('No accepted requests yet',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+          );
+        }
+        final recent = list.take(3).toList();
+        return Column(
+          children: recent
+              .map((d) => _DonorDonationTile(donation: d))
+              .toList(),
+        );
+      },
     );
   }
 }

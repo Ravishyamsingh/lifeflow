@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/database_service.dart';
+import '../widgets/lifeflow_logo.dart';
 import 'donor_home_page.dart';
 import 'patient_home_page.dart';
 
@@ -63,15 +64,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
 
               // Header
               Center(
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade600,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Icon(Icons.favorite, color: Colors.white, size: 36),
-                ),
+                child: const LifeFlowLogo(size: 72),
               ),
               const SizedBox(height: 28),
               const Center(

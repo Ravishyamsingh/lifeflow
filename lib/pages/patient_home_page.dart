@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/user_model.dart';
 import '../models/donation_model.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/location_service.dart';
+import '../widgets/distance_badge.dart';
 import 'profile_page.dart';
 import 'settings_page.dart';
 import 'find_donors_page.dart';
 import 'blood_request_page.dart';
+import 'request_detail_page.dart';
 
 class PatientHomePage extends StatefulWidget {
   const PatientHomePage({super.key});
@@ -20,6 +25,14 @@ class _PatientHomePageState extends State<PatientHomePage> {
   final AuthService _authService = AuthService();
   final DatabaseService _db = DatabaseService();
   int _currentIndex = 0;
+  DateTime? _lastBackPress;
+
+  @override
+  void initState() {
+    super.initState();
+    // Proactively request location permission on first load.
+    LocationService().getPositionDetailed();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,46 +50,70 @@ class _PatientHomePageState extends State<PatientHomePage> {
           const ProfilePage(),
         ];
 
-        return Scaffold(
-          appBar: _buildAppBar(user),
-          body: pages[_currentIndex],
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i),
-            indicatorColor: Colors.blue.shade100,
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.search_outlined),
-                selectedIcon: Icon(Icons.search),
-                label: 'Find Donors',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.assignment_outlined),
-                selectedIcon: Icon(Icons.assignment),
-                label: 'My Requests',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (_currentIndex != 0) {
+              setState(() => _currentIndex = 0);
+              return;
+            }
+            final now = DateTime.now();
+            if (_lastBackPress == null ||
+                now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+              _lastBackPress = now;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Press back again to exit'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return;
+            }
+            SystemNavigator.pop();
+          },
+          child: Scaffold(
+            appBar: _buildAppBar(user),
+            body: pages[_currentIndex],
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) => setState(() => _currentIndex = i),
+              indicatorColor: Colors.blue.shade100,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.search_outlined),
+                  selectedIcon: Icon(Icons.search),
+                  label: 'Find Donors',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.assignment_outlined),
+                  selectedIcon: Icon(Icons.assignment),
+                  label: 'My Requests',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
+            ),
+            floatingActionButton: _currentIndex == 0 || _currentIndex == 2
+                ? FloatingActionButton.extended(
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const BloodRequestPage())),
+                    backgroundColor: Colors.blue.shade600,
+                    foregroundColor: Colors.white,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Request Blood'),
+                  )
+                : null,
           ),
-          floatingActionButton: _currentIndex == 0 || _currentIndex == 2
-              ? FloatingActionButton.extended(
-                  onPressed: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const BloodRequestPage())),
-                  backgroundColor: Colors.blue.shade600,
-                  foregroundColor: Colors.white,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Request Blood'),
-                )
-              : null,
         );
       },
     );
@@ -219,11 +256,11 @@ class _PatientDashboard extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // My Active Requests
-          const Text('My Active Requests',
+          // My Requests (all statuses with stats)
+          const Text('My Requests',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          _ActiveRequestsPreview(
+          _RequestsOverview(
               db: db,
               uid: FirebaseAuth.instance.currentUser?.uid ?? ''),
           const SizedBox(height: 24),
@@ -286,13 +323,13 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-// ─────────── Active Requests Preview ───────────
+// ─────────── Requests Overview (stats + recent) ───────────
 
-class _ActiveRequestsPreview extends StatelessWidget {
+class _RequestsOverview extends StatelessWidget {
   final DatabaseService db;
   final String uid;
 
-  const _ActiveRequestsPreview({required this.db, required this.uid});
+  const _RequestsOverview({required this.db, required this.uid});
 
   @override
   Widget build(BuildContext context) {
@@ -302,41 +339,94 @@ class _ActiveRequestsPreview extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final list = snapshot.data ?? [];
-        final active = list
-            .where((r) => r.status == 'pending' || r.status == 'accepted')
-            .take(3)
-            .toList();
-
-        if (active.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                Icon(Icons.inbox_outlined,
-                    size: 36, color: Colors.grey.shade400),
-                const SizedBox(height: 8),
-                const Text('No active requests',
-                    style: TextStyle(color: Colors.grey)),
-                const SizedBox(height: 4),
-                Text('Tap "Request Blood" to create one',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade500)),
-              ],
-            ),
-          );
-        }
+        final all = snapshot.data ?? [];
+        final pending = all.where((r) => r.status == 'pending').length;
+        final accepted = all.where((r) => r.status == 'accepted').length;
+        final completed = all.where((r) => r.status == 'completed').length;
+        final recent = all.take(5).toList();
 
         return Column(
-          children: active
-              .map((r) => _PatientRequestTile(request: r))
-              .toList(),
+          children: [
+            // Stats Row
+            Row(
+              children: [
+                _StatBadge(label: 'Total', value: '${all.length}', color: Colors.blue),
+                const SizedBox(width: 8),
+                _StatBadge(label: 'Pending', value: '$pending', color: Colors.orange),
+                const SizedBox(width: 8),
+                _StatBadge(label: 'Active', value: '$accepted', color: Colors.green),
+                const SizedBox(width: 8),
+                _StatBadge(label: 'Done', value: '$completed', color: Colors.teal),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (recent.isNotEmpty)
+              ...recent.map((r) => _PatientRequestTile(request: r))
+            else
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.inbox_outlined,
+                        size: 36, color: Colors.grey.shade400),
+                    const SizedBox(height: 8),
+                    const Text('No requests yet',
+                        style: TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 4),
+                    Text('Tap "Request Blood" to create one',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _StatBadge extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatBadge({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Text(value,
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: color)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: color.withValues(alpha: 0.8))),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -346,69 +436,163 @@ class _PatientRequestTile extends StatelessWidget {
 
   const _PatientRequestTile({required this.request});
 
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'accepted':
+        return Colors.green;
+      case 'completed':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  Color _urgencyColor(String urgency) {
+    switch (urgency) {
+      case 'critical':
+        return Colors.red.shade700;
+      case 'urgent':
+        return Colors.orange.shade700;
+      default:
+        return Colors.green.shade700;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isAccepted = request.status == 'accepted';
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color:
-                isAccepted ? Colors.green.shade200 : Colors.orange.shade200),
+    final statusCol = _statusColor(request.status);
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => RequestDetailPage(request: request)),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isAccepted ? Colors.green.shade50 : Colors.orange.shade50,
-              borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: statusCol.withValues(alpha: 0.3)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-            child: Icon(
-              isAccepted ? Icons.check_circle : Icons.hourglass_top,
-              color: isAccepted ? Colors.green : Colors.orange,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${request.donorBloodType} blood needed',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Blood type badge
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(
+                  request.donorBloodType,
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
                 ),
-                const SizedBox(height: 3),
-                if (request.notes != null)
-                  Text(request.notes!,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${request.unitsNeeded} unit(s) needed',
+                          style:
+                              const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _urgencyColor(request.urgency)
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          request.urgency.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: _urgencyColor(request.urgency),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  if (request.hospitalName != null)
+                    Text(
+                      request.hospitalName!,
                       style: TextStyle(
                           fontSize: 12, color: Colors.grey.shade600),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: isAccepted ? Colors.green.shade100 : Colors.orange.shade100,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              isAccepted ? 'Accepted' : 'Pending',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: isAccepted ? Colors.green.shade700 : Colors.orange.shade700,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: statusCol.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          request.status.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: statusCol,
+                          ),
+                        ),
+                      ),
+                      if (request.status == 'accepted' &&
+                          request.donorName.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Icon(Icons.person,
+                            size: 12, color: Colors.green.shade600),
+                        const SizedBox(width: 3),
+                        Flexible(
+                          child: Text(
+                            request.donorName,
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.green.shade700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            Icon(Icons.chevron_right,
+                color: Colors.grey.shade400, size: 20),
+          ],
+        ),
       ),
     );
   }
@@ -416,15 +600,35 @@ class _PatientRequestTile extends StatelessWidget {
 
 // ─────────── Available Donors List ───────────
 
-class _AvailableDonorsList extends StatelessWidget {
+class _AvailableDonorsList extends StatefulWidget {
   final DatabaseService db;
 
   const _AvailableDonorsList({required this.db});
 
   @override
+  State<_AvailableDonorsList> createState() => _AvailableDonorsListState();
+}
+
+class _AvailableDonorsListState extends State<_AvailableDonorsList> {
+  Position? _myPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocation();
+  }
+
+  Future<void> _loadLocation() async {
+    final result = await LocationService().getPositionDetailed();
+    if (mounted) {
+      setState(() => _myPosition = result.position);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<UserModel>>(
-      stream: db.getAvailableDonors(),
+      stream: widget.db.getAvailableDonors(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -443,11 +647,32 @@ class _AvailableDonorsList extends StatelessWidget {
             ),
           );
         }
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: donors.length > 5 ? 5 : donors.length,
-          itemBuilder: (_, i) => _DonorTile(donor: donors[i]),
+        return Column(
+          children: [
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: donors.length > 5 ? 5 : donors.length,
+              itemBuilder: (_, i) =>
+                  _DonorTile(donor: donors[i], myPosition: _myPosition),
+            ),
+            if (donors.length > 5)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const FindDonorsPage()),
+                  ),
+                  icon: const Icon(Icons.search, size: 18),
+                  label: Text(
+                    'View All ${donors.length} Donors',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -456,8 +681,9 @@ class _AvailableDonorsList extends StatelessWidget {
 
 class _DonorTile extends StatelessWidget {
   final UserModel donor;
+  final Position? myPosition;
 
-  const _DonorTile({required this.donor});
+  const _DonorTile({required this.donor, this.myPosition});
 
   @override
   Widget build(BuildContext context) {
@@ -516,14 +742,14 @@ class _DonorTile extends StatelessWidget {
                               fontWeight: FontWeight.bold)),
                       const SizedBox(width: 8),
                     ],
-                    if (donor.location != null)
-                      Row(children: [
-                        Icon(Icons.location_on,
-                            size: 12, color: Colors.grey.shade500),
-                        Text(donor.location!,
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey.shade500)),
-                      ]),
+                    Expanded(
+                      child: DistanceBadge(
+                        myPosition: myPosition,
+                        destLat: donor.latitude,
+                        destLng: donor.longitude,
+                        fallbackLocation: donor.location,
+                      ),
+                    ),
                   ],
                 ),
                 if (donor.totalDonations > 0)

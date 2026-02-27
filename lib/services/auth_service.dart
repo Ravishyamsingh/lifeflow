@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user_model.dart';
 import 'database_service.dart';
@@ -285,7 +286,7 @@ class AuthService {
 
       await _databaseService.createOrUpdateUser(userModel);
     } catch (e) {
-      print('Error creating user document: $e');
+      debugPrint('Error creating user document: $e');
     }
   }
 

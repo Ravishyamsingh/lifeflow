@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lifeflow/services/auth_service.dart';
+import 'package:lifeflow/widgets/lifeflow_logo.dart';
 import 'phone_login_page.dart';
 
 class AuthPage extends StatefulWidget {
@@ -17,6 +19,7 @@ class _AuthPageState extends State<AuthPage> {
   final _nameController = TextEditingController();
 
   bool _isLogin = true;
+  DateTime? _lastBackPress;
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -81,7 +84,26 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final now = DateTime.now();
+        if (_lastBackPress == null ||
+            now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+          _lastBackPress = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        SystemNavigator.pop();
+      },
+      child: Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: SafeArea(
         child: Center(
@@ -103,7 +125,7 @@ class _AuthPageState extends State<AuthPage> {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -240,32 +262,14 @@ class _AuthPageState extends State<AuthPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
   Widget _buildHeader() {
     return Column(
       children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: Colors.red.shade600,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.red.shade600.withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.favorite,
-            color: Colors.white,
-            size: 40,
-          ),
-        ),
+        const LifeFlowLogo(size: 80),
         const SizedBox(height: 24),
         const Text(
           'LifeFlow',
@@ -329,7 +333,7 @@ class _AuthPageState extends State<AuthPage> {
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),

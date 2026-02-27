@@ -14,6 +14,22 @@ class DonationModel {
   final String? notes;
   final bool isAnonymous;
 
+  // ── Extended patient details ──
+  final String? patientPhone;
+  final String? patientAddress;
+  final double? patientLat;
+  final double? patientLng;
+  final DateTime? patientDob;
+  final String? patientDisease;      // diagnosis / reason
+  final String? hospitalName;
+  final String? hospitalAddress;     // full hospital address with pincode
+  final String? doctorName;
+  final int unitsNeeded;             // number of blood units
+  final String urgency;              // 'critical' | 'urgent' | 'normal'
+  final String? relationToPatient;   // self / relative / friend / other
+  final double? hospitalLat;
+  final double? hospitalLng;
+
   DonationModel({
     required this.donationId,
     required this.donorId,
@@ -27,9 +43,22 @@ class DonationModel {
     this.location,
     this.notes,
     this.isAnonymous = false,
+    this.patientPhone,
+    this.patientAddress,
+    this.patientLat,
+    this.patientLng,
+    this.patientDob,
+    this.patientDisease,
+    this.hospitalName,
+    this.hospitalAddress,
+    this.doctorName,
+    this.unitsNeeded = 1,
+    this.urgency = 'urgent',
+    this.relationToPatient,
+    this.hospitalLat,
+    this.hospitalLng,
   });
 
-  // Convert DonationModel to JSON for Firestore
   Map<String, dynamic> toFirestore() {
     return {
       'donationId': donationId,
@@ -44,14 +73,27 @@ class DonationModel {
       'location': location,
       'notes': notes,
       'isAnonymous': isAnonymous,
+      'patientPhone': patientPhone,
+      'patientAddress': patientAddress,
+      'patientLat': patientLat,
+      'patientLng': patientLng,
+      'patientDob': patientDob != null ? Timestamp.fromDate(patientDob!) : null,
+      'patientDisease': patientDisease,
+      'hospitalName': hospitalName,
+      'hospitalAddress': hospitalAddress,
+      'doctorName': doctorName,
+      'unitsNeeded': unitsNeeded,
+      'urgency': urgency,
+      'relationToPatient': relationToPatient,
+      'hospitalLat': hospitalLat,
+      'hospitalLng': hospitalLng,
     };
   }
 
-  // Create DonationModel from Firestore document
   factory DonationModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return DonationModel(
-      donationId: data['donationId'] ?? '',
+      donationId: doc.id,
       donorId: data['donorId'] ?? '',
       donorName: data['donorName'] ?? 'Unknown',
       donorBloodType: data['donorBloodType'] ?? 'O+',
@@ -60,14 +102,28 @@ class DonationModel {
       status: data['status'] ?? 'pending',
       donationDate:
           (data['donationDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt:
+          (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       location: data['location'],
       notes: data['notes'],
       isAnonymous: data['isAnonymous'] ?? false,
+      patientPhone: data['patientPhone'],
+      patientAddress: data['patientAddress'],
+      patientLat: (data['patientLat'] as num?)?.toDouble(),
+      patientLng: (data['patientLng'] as num?)?.toDouble(),
+      patientDob: (data['patientDob'] as Timestamp?)?.toDate(),
+      patientDisease: data['patientDisease'],
+      hospitalName: data['hospitalName'],
+      hospitalAddress: data['hospitalAddress'],
+      doctorName: data['doctorName'],
+      unitsNeeded: data['unitsNeeded'] ?? 1,
+      urgency: data['urgency'] ?? 'urgent',
+      relationToPatient: data['relationToPatient'],
+      hospitalLat: (data['hospitalLat'] as num?)?.toDouble(),
+      hospitalLng: (data['hospitalLng'] as num?)?.toDouble(),
     );
   }
 
-  // Copy with method
   DonationModel copyWith({
     String? donationId,
     String? donorId,
@@ -81,6 +137,20 @@ class DonationModel {
     String? location,
     String? notes,
     bool? isAnonymous,
+    String? patientPhone,
+    String? patientAddress,
+    double? patientLat,
+    double? patientLng,
+    DateTime? patientDob,
+    String? patientDisease,
+    String? hospitalName,
+    String? hospitalAddress,
+    String? doctorName,
+    int? unitsNeeded,
+    String? urgency,
+    String? relationToPatient,
+    double? hospitalLat,
+    double? hospitalLng,
   }) {
     return DonationModel(
       donationId: donationId ?? this.donationId,
@@ -95,6 +165,20 @@ class DonationModel {
       location: location ?? this.location,
       notes: notes ?? this.notes,
       isAnonymous: isAnonymous ?? this.isAnonymous,
+      patientPhone: patientPhone ?? this.patientPhone,
+      patientAddress: patientAddress ?? this.patientAddress,
+      patientLat: patientLat ?? this.patientLat,
+      patientLng: patientLng ?? this.patientLng,
+      patientDob: patientDob ?? this.patientDob,
+      patientDisease: patientDisease ?? this.patientDisease,
+      hospitalName: hospitalName ?? this.hospitalName,
+      hospitalAddress: hospitalAddress ?? this.hospitalAddress,
+      doctorName: doctorName ?? this.doctorName,
+      unitsNeeded: unitsNeeded ?? this.unitsNeeded,
+      urgency: urgency ?? this.urgency,
+      relationToPatient: relationToPatient ?? this.relationToPatient,
+      hospitalLat: hospitalLat ?? this.hospitalLat,
+      hospitalLng: hospitalLng ?? this.hospitalLng,
     );
   }
 }

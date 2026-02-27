@@ -29,10 +29,50 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin="" />
+
   <title>lifeflow</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    #map {
+      height: 500px;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+
+  <script>
+    // Initialize Leaflet map helper for Flutter web interop
+    window.initLeafletMap = function(containerId, lat, lng, zoom) {
+      var container = document.getElementById(containerId);
+      if (!container) return null;
+      var map = L.map(containerId).setView([lat || 22.3072, lng || 73.1812], zoom || 13);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+      return map;
+    };
+
+    window.addLeafletMarker = function(map, lat, lng, popupText) {
+      if (!map) return null;
+      var marker = L.marker([lat, lng]).addTo(map);
+      if (popupText) {
+        marker.bindPopup(popupText);
+      }
+      return marker;
+    };
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

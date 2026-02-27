@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../models/donation_model.dart';
 
@@ -21,9 +22,9 @@ class DatabaseService {
             user.toFirestore(),
             SetOptions(merge: true),
           );
-      print('User ${user.uid} created/updated successfully');
+      debugPrint('User ${user.uid} created/updated successfully');
     } catch (e) {
-      print('Error creating/updating user: $e');
+      debugPrint('Error creating/updating user: $e');
       rethrow;
     }
   }
@@ -37,7 +38,7 @@ class DatabaseService {
       }
       return null;
     } catch (e) {
-      print('Error fetching user: $e');
+      debugPrint('Error fetching user: $e');
       rethrow;
     }
   }
@@ -73,9 +74,9 @@ class DatabaseService {
       updates['lastLogin'] = FieldValue.serverTimestamp();
 
       await _firestore.collection('users').doc(uid).update(updates);
-      print('User profile updated successfully');
+      debugPrint('User profile updated successfully');
     } catch (e) {
-      print('Error updating user profile: $e');
+      debugPrint('Error updating user profile: $e');
       rethrow;
     }
   }
@@ -85,7 +86,7 @@ class DatabaseService {
     try {
       await _firestore.collection('users').doc(uid).update({'role': role});
     } catch (e) {
-      print('Error updating user role: $e');
+      debugPrint('Error updating user role: $e');
       rethrow;
     }
   }
@@ -111,9 +112,9 @@ class DatabaseService {
         'isAvailableToDonate': isAvailable,
         'lastLogin': FieldValue.serverTimestamp(),
       });
-      print('Donation availability updated');
+      debugPrint('Donation availability updated');
     } catch (e) {
-      print('Error updating donation availability: $e');
+      debugPrint('Error updating donation availability: $e');
       rethrow;
     }
   }
@@ -146,13 +147,13 @@ class DatabaseService {
   /// Create a new donation request
   Future<String> createDonation(DonationModel donation) async {
     try {
-      final docRef = await _firestore
-          .collection('donations')
-          .add(donation.toFirestore());
-      print('Donation created with ID: ${docRef.id}');
+      final docRef = _firestore.collection('donations').doc();
+      final model = donation.copyWith(donationId: docRef.id);
+      await docRef.set(model.toFirestore());
+      debugPrint('Donation created with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('Error creating donation: $e');
+      debugPrint('Error creating donation: $e');
       rethrow;
     }
   }
@@ -167,7 +168,7 @@ class DatabaseService {
       }
       return null;
     } catch (e) {
-      print('Error fetching donation: $e');
+      debugPrint('Error fetching donation: $e');
       rethrow;
     }
   }
@@ -207,9 +208,9 @@ class DatabaseService {
         'status': status,
         'lastUpdated': FieldValue.serverTimestamp(),
       });
-      print('Donation status updated to: $status');
+      debugPrint('Donation status updated to: $status');
     } catch (e) {
-      print('Error updating donation status: $e');
+      debugPrint('Error updating donation status: $e');
       rethrow;
     }
   }
@@ -228,22 +229,62 @@ class DatabaseService {
     });
   }
 
-  /// Accept a donation request
+  /// Accept a donation request (stores full donor info)
   Future<void> acceptDonation(
     String donationId,
-    String userId,
-  ) async {
+    String donorUid, {
+    String? donorName,
+    String? donorBloodType,
+  }) async {
     try {
-      await _firestore.collection('donations').doc(donationId).update({
+      final updates = <String, dynamic>{
         'status': 'accepted',
-        'acceptedBy': userId,
+        'acceptedBy': donorUid,
+        'donorId': donorUid,
         'acceptedAt': FieldValue.serverTimestamp(),
-      });
-      print('Donation accepted');
+      };
+      if (donorName != null) updates['donorName'] = donorName;
+      if (donorBloodType != null) updates['donorBloodType'] = donorBloodType;
+
+      await _firestore.collection('donations').doc(donationId).update(updates);
+      debugPrint('Donation accepted by $donorUid');
     } catch (e) {
-      print('Error accepting donation: $e');
+      debugPrint('Error accepting donation: $e');
       rethrow;
     }
+  }
+
+  /// Update user's GPS location in Firestore
+  Future<void> updateUserLocation(
+    String uid, {
+    required double latitude,
+    required double longitude,
+    String? address,
+  }) async {
+    try {
+      final updates = <String, dynamic>{
+        'latitude': latitude,
+        'longitude': longitude,
+        'lastLogin': FieldValue.serverTimestamp(),
+      };
+      if (address != null) updates['location'] = address;
+      await _firestore.collection('users').doc(uid).update(updates);
+      debugPrint('User location updated');
+    } catch (e) {
+      debugPrint('Error updating user location: $e');
+      rethrow;
+    }
+  }
+
+  /// Get accepted donations for a donor (where they are the acceptor)
+  Stream<List<DonationModel>> getAcceptedDonationsForDonor(String donorUid) {
+    return _firestore
+        .collection('donations')
+        .where('acceptedBy', isEqualTo: donorUid)
+        .orderBy('acceptedAt', descending: true)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((d) => DonationModel.fromFirestore(d)).toList());
   }
 
   /// Complete a donation
@@ -267,10 +308,10 @@ class DatabaseService {
           'livesSaved': FieldValue.increment(1),
         });
 
-        print('Donation completed');
+        debugPrint('Donation completed');
       }
     } catch (e) {
-      print('Error completing donation: $e');
+      debugPrint('Error completing donation: $e');
       rethrow;
     }
   }
@@ -282,9 +323,9 @@ class DatabaseService {
         'status': 'cancelled',
         'cancelledAt': FieldValue.serverTimestamp(),
       });
-      print('Donation cancelled');
+      debugPrint('Donation cancelled');
     } catch (e) {
-      print('Error cancelling donation: $e');
+      debugPrint('Error cancelling donation: $e');
       rethrow;
     }
   }
@@ -303,7 +344,7 @@ class DatabaseService {
         'livesSaved': user.livesSaved,
       };
     } catch (e) {
-      print('Error fetching user statistics: $e');
+      debugPrint('Error fetching user statistics: $e');
       rethrow;
     }
   }
@@ -346,9 +387,9 @@ class DatabaseService {
       }
 
       await batch.commit();
-      print('User account deleted');
+      debugPrint('User account deleted');
     } catch (e) {
-      print('Error deleting user account: $e');
+      debugPrint('Error deleting user account: $e');
       rethrow;
     }
   }
@@ -368,9 +409,9 @@ class DatabaseService {
         await doc.reference.delete();
       }
 
-      print('All data cleared successfully');
+      debugPrint('All data cleared successfully');
     } catch (e) {
-      print('Error clearing data: $e');
+      debugPrint('Error clearing data: $e');
       rethrow;
     }
   }

@@ -70,12 +70,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: _availableToDonate,
                       onChanged: (value) async {
                         setState(() => _availableToDonate = value);
+                        final messenger = ScaffoldMessenger.of(context);
                         await _databaseService.setDonationAvailability(
                           currentUser!.uid,
                           value,
                         );
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             SnackBar(
                               content: Text(
                                 value
@@ -229,7 +230,7 @@ class _SettingsPageState extends State<SettingsPage> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -272,7 +273,7 @@ class _SettingsPageState extends State<SettingsPage> {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: Colors.red.shade600,
+        activeTrackColor: Colors.red.shade600,
       ),
     );
   }
@@ -369,11 +370,13 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await _authService.resetPassword(currentUser!.email!);
                 if (mounted) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  navigator.pop();
+                  messenger.showSnackBar(
                     const SnackBar(
                       content: Text('Password reset email sent'),
                       backgroundColor: Colors.green,
@@ -382,7 +385,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
                       content: Text('Error: ${e.toString()}'),
                       backgroundColor: Colors.red,
@@ -417,12 +420,14 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await _databaseService.deleteUser(currentUser!.uid);
                 await currentUser!.delete();
                 if (mounted) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  navigator.pop();
+                  messenger.showSnackBar(
                     const SnackBar(
                       content: Text('Account deleted successfully'),
                       backgroundColor: Colors.green,
@@ -431,7 +436,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
                       content: Text('Error: ${e.toString()}'),
                       backgroundColor: Colors.red,
@@ -463,14 +468,16 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           ElevatedButton(
             onPressed: () async {
+              final navigator = Navigator.of(context);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await _authService.signOut();
                 if (mounted) {
-                  Navigator.of(context).pop();
+                  navigator.pop();
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  messenger.showSnackBar(
                     SnackBar(
                       content: Text('Error: ${e.toString()}'),
                       backgroundColor: Colors.red,
